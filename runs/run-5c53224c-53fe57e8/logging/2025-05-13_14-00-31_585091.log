@@ -1,0 +1,192 @@
+2025-05-13 14:00:31.589 | __main__:main:55 | INFO | /home/simon/miniconda3/envs/spvnas-kitti/bin/python train.py configs/kitti/pv_rcnn/pv_rcnn_plugin.yaml --distributed False
+2025-05-13 14:00:31.590 | __main__:main:56 | INFO | Experiment started: "runs/run-5c53224c-53fe57e8".
+workers_per_gpu: 8
+distributed: False
+amp_enabled: True
+train:
+  seed: 1588147245
+  deterministic: False
+dataset:
+  name: kitti
+num_epochs: 80
+batch_size: 2
+ckpt_save_interval: 1
+max_ckpt_save_num: 5
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+DATA_CONFIG:
+  _BASE_CONFIG_: configs/kitti/kitti_dataset.yaml
+  DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST: [{'NAME': 'gt_sampling', 'USE_ROAD_PLANE': False, 'DB_INFO_PATH': ['kitti_dbinfos_train.pkl'], 'PREPARE': {'filter_by_min_points': ['Car:5', 'Pedestrian:5', 'Cyclist:5'], 'filter_by_difficulty': [-1]}, 'SAMPLE_GROUPS': ['Car:15', 'Pedestrian:10', 'Cyclist:10'], 'NUM_POINT_FEATURES': 4, 'DATABASE_WITH_FAKELIDAR': False, 'REMOVE_EXTRA_WIDTH': [0.0, 0.0, 0.0], 'LIMIT_WHOLE_SCENE': False}, {'NAME': 'random_world_flip', 'ALONG_AXIS_LIST': ['x']}, {'NAME': 'random_world_rotation', 'WORLD_ROT_ANGLE': [-0.78539816, 0.78539816]}, {'NAME': 'random_world_scaling', 'WORLD_SCALE_RANGE': [0.95, 1.05]}]
+model:
+  name: spvrcnn
+  VFE:
+    NAME: MeanVFE
+  BACKBONE_3D:
+    NAME: VoxelBackBone8xTS
+  MAP_TO_BEV:
+    NAME: HeightCompressionTS
+    NUM_BEV_FEATURES: 256
+  BACKBONE_2D:
+    NAME: BaseBEVBackbone
+    LAYER_NUMS: [5, 5]
+    LAYER_STRIDES: [1, 2]
+    NUM_FILTERS: [128, 256]
+    UPSAMPLE_STRIDES: [1, 2]
+    NUM_UPSAMPLE_FILTERS: [256, 256]
+  DENSE_HEAD:
+    NAME: AnchorHeadSingle
+    CLASS_AGNOSTIC: False
+    USE_DIRECTION_CLASSIFIER: True
+    DIR_OFFSET: 0.78539
+    DIR_LIMIT_OFFSET: 0.0
+    NUM_DIR_BINS: 2
+    ANCHOR_GENERATOR_CONFIG: [{'class_name': 'Car', 'anchor_sizes': [[3.9, 1.6, 1.56]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-1.78], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.6, 'unmatched_threshold': 0.45}, {'class_name': 'Pedestrian', 'anchor_sizes': [[0.8, 0.6, 1.73]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.6], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}, {'class_name': 'Cyclist', 'anchor_sizes': [[1.76, 0.6, 1.73]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.6], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}]
+    TARGET_ASSIGNER_CONFIG:
+      NAME: AxisAlignedTargetAssigner
+      POS_FRACTION: -1.0
+      SAMPLE_SIZE: 512
+      NORM_BY_NUM_EXAMPLES: False
+      MATCH_HEIGHT: False
+      BOX_CODER: ResidualCoder
+    LOSS_CONFIG:
+      LOSS_WEIGHTS:
+        cls_weight: 1.0
+        loc_weight: 2.0
+        dir_weight: 0.2
+        code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  PFE:
+    NAME: VoxelSetAbstractionTS
+    POINT_SOURCE: raw_points
+    NUM_KEYPOINTS: 2048
+    NUM_OUTPUT_FEATURES: 128
+    SAMPLE_METHOD: FPS
+    FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'raw_points']
+    SA_LAYER:
+      raw_points:
+        MLPS: [[16, 16], [16, 16]]
+        POOL_RADIUS: [0.4, 0.8]
+        NSAMPLE: [16, 16]
+      x_conv1:
+        DOWNSAMPLE_FACTOR: 1
+        MLPS: [[16, 16], [16, 16]]
+        POOL_RADIUS: [0.4, 0.8]
+        NSAMPLE: [16, 16]
+      x_conv2:
+        DOWNSAMPLE_FACTOR: 2
+        MLPS: [[32, 32], [32, 32]]
+        POOL_RADIUS: [0.8, 1.2]
+        NSAMPLE: [16, 32]
+      x_conv3:
+        DOWNSAMPLE_FACTOR: 4
+        MLPS: [[64, 64], [64, 64]]
+        POOL_RADIUS: [1.2, 2.4]
+        NSAMPLE: [16, 32]
+      x_conv4:
+        DOWNSAMPLE_FACTOR: 8
+        MLPS: [[64, 64], [64, 64]]
+        POOL_RADIUS: [2.4, 4.8]
+        NSAMPLE: [16, 32]
+  POINT_HEAD:
+    NAME: PointHeadSimple
+    CLS_FC: [256, 256]
+    CLASS_AGNOSTIC: True
+    USE_POINT_FEATURES_BEFORE_FUSION: True
+    TARGET_CONFIG:
+      GT_EXTRA_WIDTH: [0.2, 0.2, 0.2]
+    LOSS_CONFIG:
+      LOSS_REG: smooth-l1
+      LOSS_WEIGHTS:
+        point_cls_weight: 1.0
+  ROI_HEAD:
+    NAME: PVRCNNHead
+    CLASS_AGNOSTIC: True
+    SHARED_FC: [256, 256]
+    CLS_FC: [256, 256]
+    REG_FC: [256, 256]
+    DP_RATIO: 0.3
+    NMS_CONFIG:
+      TRAIN:
+        NMS_TYPE: nms_gpu
+        MULTI_CLASSES_NMS: False
+        NMS_PRE_MAXSIZE: 9000
+        NMS_POST_MAXSIZE: 512
+        NMS_THRESH: 0.8
+      TEST:
+        NMS_TYPE: nms_gpu
+        MULTI_CLASSES_NMS: False
+        NMS_PRE_MAXSIZE: 1024
+        NMS_POST_MAXSIZE: 100
+        NMS_THRESH: 0.7
+    ROI_GRID_POOL:
+      GRID_SIZE: 6
+      MLPS: [[64, 64], [64, 64]]
+      POOL_RADIUS: [0.8, 1.6]
+      NSAMPLE: [16, 16]
+      POOL_METHOD: max_pool
+    TARGET_CONFIG:
+      BOX_CODER: ResidualCoder
+      ROI_PER_IMAGE: 128
+      FG_RATIO: 0.5
+      SAMPLE_ROI_BY_EACH_CLASS: True
+      CLS_SCORE_TYPE: roi_iou
+      CLS_FG_THRESH: 0.75
+      CLS_BG_THRESH: 0.25
+      CLS_BG_THRESH_LO: 0.1
+      HARD_BG_RATIO: 0.8
+      REG_FG_THRESH: 0.55
+    LOSS_CONFIG:
+      CLS_LOSS: BinaryCrossEntropy
+      REG_LOSS: smooth-l1
+      CORNER_LOSS_REGULARIZATION: True
+      LOSS_WEIGHTS:
+        rcnn_cls_weight: 1.0
+        rcnn_reg_weight: 1.0
+        rcnn_corner_weight: 1.0
+        code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+    SCORE_THRESH: 0.1
+    OUTPUT_RAW_SCORE: False
+    EVAL_METRIC: kitti
+    NMS_CONFIG:
+      MULTI_CLASSES_NMS: False
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+criterion:
+  name: skip
+scheduler:
+  name: adam_onecycle
+optimizer:
+  name: adam_onecycle
+  LR: 0.01
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+  MOMS: [0.95, 0.85]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [35, 45]
+  LR_DECAY: 0.1
+  LR_CLIP: 1e-07
+  LR_WARMUP: False
+  WARMUP_EPOCH: 1
+  GRAD_NORM_CLIP: 10
+2025-05-13 14:00:37.817 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [   0/1856 (  0%)]  Loss: 14.46 (14.5)  LR: 1.000e-03  Time cost: 00:05/2:36:02 [00:05/208:02:42]  Acc_iter 1           Data time: 1.02(1.02)  Forward time: 4.02(4.02)  Batch time: 5.04(5.04)
+2025-05-13 14:01:00.044 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [  49/1856 (  3%)]  Loss: 3.225 (3.64)  LR: 1.000e-03  Time cost: 00:27/16:25 [00:27/22:29:16]  Acc_iter 50          Data time: 0.18(0.20)  Forward time: 0.27(0.34)  Batch time: 0.45(0.54)
+2025-05-13 14:01:22.807 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [  99/1856 (  5%)]  Loss: 2.641 (3.45)  LR: 1.000e-03  Time cost: 00:50/14:39 [00:50/20:37:21]  Acc_iter 100         Data time: 0.18(0.19)  Forward time: 0.28(0.31)  Batch time: 0.46(0.50)
+2025-05-13 14:01:45.711 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 149/1856 (  8%)]  Loss: 2.682 (3.25)  LR: 1.000e-03  Time cost: 01:12/13:50 [01:13/20:02:06]  Acc_iter 150         Data time: 0.18(0.19)  Forward time: 0.28(0.30)  Batch time: 0.46(0.49)
+2025-05-13 14:01:45.713 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:02:08.577 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 199/1856 ( 11%)]  Loss: 2.347 (3.13)  LR: 1.000e-03  Time cost: 01:35/13:13 [01:36/19:43:49]  Acc_iter 200         Data time: 0.18(0.19)  Forward time: 0.29(0.29)  Batch time: 0.47(0.48)
+2025-05-13 14:02:31.600 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 249/1856 ( 13%)]  Loss: 2.330 (3.02)  LR: 1.000e-03  Time cost: 01:58/12:43 [01:59/19:34:15]  Acc_iter 250         Data time: 0.19(0.19)  Forward time: 0.27(0.29)  Batch time: 0.46(0.47)
+2025-05-13 14:02:54.704 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 299/1856 ( 16%)]  Loss: 2.421 (2.94)  LR: 1.001e-03  Time cost: 02:21/12:16 [02:22/19:28:25]  Acc_iter 300         Data time: 0.19(0.19)  Forward time: 0.28(0.29)  Batch time: 0.47(0.47)
+2025-05-13 14:02:54.707 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:03:17.741 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 349/1856 ( 19%)]  Loss: 2.676 (2.87)  LR: 1.001e-03  Time cost: 02:44/11:50 [02:45/19:23:39]  Acc_iter 350         Data time: 0.19(0.19)  Forward time: 0.28(0.29)  Batch time: 0.47(0.47)
+2025-05-13 14:03:40.782 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 399/1856 ( 21%)]  Loss: 2.519 (2.81)  LR: 1.001e-03  Time cost: 03:08/11:24 [03:08/19:20:01]  Acc_iter 400         Data time: 0.19(0.19)  Forward time: 0.28(0.28)  Batch time: 0.47(0.47)
+2025-05-13 14:04:03.830 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 449/1856 ( 24%)]  Loss: 2.456 (2.75)  LR: 1.001e-03  Time cost: 03:31/10:59 [03:31/19:17:09]  Acc_iter 450         Data time: 0.18(0.19)  Forward time: 0.28(0.28)  Batch time: 0.46(0.47)
+2025-05-13 14:04:03.833 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:04:26.946 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 499/1856 ( 27%)]  Loss: 2.227 (2.71)  LR: 1.002e-03  Time cost: 03:54/10:35 [03:54/19:15:06]  Acc_iter 500         Data time: 0.18(0.19)  Forward time: 0.27(0.28)  Batch time: 0.45(0.47)
+2025-05-13 14:04:50.026 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 549/1856 ( 30%)]  Loss: 2.144 (2.67)  LR: 1.002e-03  Time cost: 04:17/10:11 [04:17/19:13:12]  Acc_iter 550         Data time: 0.18(0.19)  Forward time: 0.28(0.28)  Batch time: 0.46(0.47)
+2025-05-13 14:05:13.102 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 599/1856 ( 32%)]  Loss: 2.150 (2.63)  LR: 1.002e-03  Time cost: 04:40/09:47 [04:40/19:11:32]  Acc_iter 600         Data time: 0.19(0.19)  Forward time: 0.28(0.28)  Batch time: 0.47(0.47)
+2025-05-13 14:05:13.105 | core.modules.train_utils:train_one_epoch:122 | INFO | 

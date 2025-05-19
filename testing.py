@@ -104,7 +104,7 @@ def main() -> None:
             model, device_ids=[dist.local_rank()% torch.cuda.device_count()], find_unused_parameters=True)
     
     scheduler = builder.make_scheduler(optimizer)
-
+'''
     from pathlib import Path
     from tensorboardX import SummaryWriter
     root_dir = Path(__file__).resolve().parent 
@@ -143,7 +143,7 @@ def main() -> None:
         use_amp=False,
         cfg=configs
     )
-
+'''
 
 if __name__ == '__main__':
     main()
