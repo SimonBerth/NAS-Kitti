@@ -1,0 +1,303 @@
+2025-05-13 14:08:41.230 | __main__:main:55 | INFO | /home/simon/miniconda3/envs/spvnas-kitti/bin/python train.py configs/kitti/pv_rcnn/pv_rcnn_plugin.yaml --distributed False
+2025-05-13 14:08:41.231 | __main__:main:56 | INFO | Experiment started: "runs/run-5c53224c-53fe57e8".
+workers_per_gpu: 8
+distributed: False
+amp_enabled: True
+train:
+  seed: 1588147245
+  deterministic: False
+dataset:
+  name: kitti
+num_epochs: 80
+batch_size: 2
+ckpt_save_interval: 1
+max_ckpt_save_num: 5
+CLASS_NAMES: ['Car', 'Pedestrian', 'Cyclist']
+DATA_CONFIG:
+  _BASE_CONFIG_: configs/kitti/kitti_dataset.yaml
+  DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST: [{'NAME': 'gt_sampling', 'USE_ROAD_PLANE': False, 'DB_INFO_PATH': ['kitti_dbinfos_train.pkl'], 'PREPARE': {'filter_by_min_points': ['Car:5', 'Pedestrian:5', 'Cyclist:5'], 'filter_by_difficulty': [-1]}, 'SAMPLE_GROUPS': ['Car:15', 'Pedestrian:10', 'Cyclist:10'], 'NUM_POINT_FEATURES': 4, 'DATABASE_WITH_FAKELIDAR': False, 'REMOVE_EXTRA_WIDTH': [0.0, 0.0, 0.0], 'LIMIT_WHOLE_SCENE': False}, {'NAME': 'random_world_flip', 'ALONG_AXIS_LIST': ['x']}, {'NAME': 'random_world_rotation', 'WORLD_ROT_ANGLE': [-0.78539816, 0.78539816]}, {'NAME': 'random_world_scaling', 'WORLD_SCALE_RANGE': [0.95, 1.05]}]
+model:
+  name: spvrcnn
+  VFE:
+    NAME: MeanVFE
+  BACKBONE_3D:
+    NAME: VoxelBackBone8xTS
+  MAP_TO_BEV:
+    NAME: HeightCompressionTS
+    NUM_BEV_FEATURES: 256
+  BACKBONE_2D:
+    NAME: BaseBEVBackbone
+    LAYER_NUMS: [5, 5]
+    LAYER_STRIDES: [1, 2]
+    NUM_FILTERS: [128, 256]
+    UPSAMPLE_STRIDES: [1, 2]
+    NUM_UPSAMPLE_FILTERS: [256, 256]
+  DENSE_HEAD:
+    NAME: AnchorHeadSingle
+    CLASS_AGNOSTIC: False
+    USE_DIRECTION_CLASSIFIER: True
+    DIR_OFFSET: 0.78539
+    DIR_LIMIT_OFFSET: 0.0
+    NUM_DIR_BINS: 2
+    ANCHOR_GENERATOR_CONFIG: [{'class_name': 'Car', 'anchor_sizes': [[3.9, 1.6, 1.56]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-1.78], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.6, 'unmatched_threshold': 0.45}, {'class_name': 'Pedestrian', 'anchor_sizes': [[0.8, 0.6, 1.73]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.6], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}, {'class_name': 'Cyclist', 'anchor_sizes': [[1.76, 0.6, 1.73]], 'anchor_rotations': [0, 1.57], 'anchor_bottom_heights': [-0.6], 'align_center': False, 'feature_map_stride': 8, 'matched_threshold': 0.5, 'unmatched_threshold': 0.35}]
+    TARGET_ASSIGNER_CONFIG:
+      NAME: AxisAlignedTargetAssigner
+      POS_FRACTION: -1.0
+      SAMPLE_SIZE: 512
+      NORM_BY_NUM_EXAMPLES: False
+      MATCH_HEIGHT: False
+      BOX_CODER: ResidualCoder
+    LOSS_CONFIG:
+      LOSS_WEIGHTS:
+        cls_weight: 1.0
+        loc_weight: 2.0
+        dir_weight: 0.2
+        code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  PFE:
+    NAME: VoxelSetAbstractionTS
+    POINT_SOURCE: raw_points
+    NUM_KEYPOINTS: 2048
+    NUM_OUTPUT_FEATURES: 128
+    SAMPLE_METHOD: FPS
+    FEATURES_SOURCE: ['bev', 'x_conv1', 'x_conv2', 'x_conv3', 'x_conv4', 'raw_points']
+    SA_LAYER:
+      raw_points:
+        MLPS: [[16, 16], [16, 16]]
+        POOL_RADIUS: [0.4, 0.8]
+        NSAMPLE: [16, 16]
+      x_conv1:
+        DOWNSAMPLE_FACTOR: 1
+        MLPS: [[16, 16], [16, 16]]
+        POOL_RADIUS: [0.4, 0.8]
+        NSAMPLE: [16, 16]
+      x_conv2:
+        DOWNSAMPLE_FACTOR: 2
+        MLPS: [[32, 32], [32, 32]]
+        POOL_RADIUS: [0.8, 1.2]
+        NSAMPLE: [16, 32]
+      x_conv3:
+        DOWNSAMPLE_FACTOR: 4
+        MLPS: [[64, 64], [64, 64]]
+        POOL_RADIUS: [1.2, 2.4]
+        NSAMPLE: [16, 32]
+      x_conv4:
+        DOWNSAMPLE_FACTOR: 8
+        MLPS: [[64, 64], [64, 64]]
+        POOL_RADIUS: [2.4, 4.8]
+        NSAMPLE: [16, 32]
+  POINT_HEAD:
+    NAME: PointHeadSimple
+    CLS_FC: [256, 256]
+    CLASS_AGNOSTIC: True
+    USE_POINT_FEATURES_BEFORE_FUSION: True
+    TARGET_CONFIG:
+      GT_EXTRA_WIDTH: [0.2, 0.2, 0.2]
+    LOSS_CONFIG:
+      LOSS_REG: smooth-l1
+      LOSS_WEIGHTS:
+        point_cls_weight: 1.0
+  ROI_HEAD:
+    NAME: PVRCNNHead
+    CLASS_AGNOSTIC: True
+    SHARED_FC: [256, 256]
+    CLS_FC: [256, 256]
+    REG_FC: [256, 256]
+    DP_RATIO: 0.3
+    NMS_CONFIG:
+      TRAIN:
+        NMS_TYPE: nms_gpu
+        MULTI_CLASSES_NMS: False
+        NMS_PRE_MAXSIZE: 9000
+        NMS_POST_MAXSIZE: 512
+        NMS_THRESH: 0.8
+      TEST:
+        NMS_TYPE: nms_gpu
+        MULTI_CLASSES_NMS: False
+        NMS_PRE_MAXSIZE: 1024
+        NMS_POST_MAXSIZE: 100
+        NMS_THRESH: 0.7
+    ROI_GRID_POOL:
+      GRID_SIZE: 6
+      MLPS: [[64, 64], [64, 64]]
+      POOL_RADIUS: [0.8, 1.6]
+      NSAMPLE: [16, 16]
+      POOL_METHOD: max_pool
+    TARGET_CONFIG:
+      BOX_CODER: ResidualCoder
+      ROI_PER_IMAGE: 128
+      FG_RATIO: 0.5
+      SAMPLE_ROI_BY_EACH_CLASS: True
+      CLS_SCORE_TYPE: roi_iou
+      CLS_FG_THRESH: 0.75
+      CLS_BG_THRESH: 0.25
+      CLS_BG_THRESH_LO: 0.1
+      HARD_BG_RATIO: 0.8
+      REG_FG_THRESH: 0.55
+    LOSS_CONFIG:
+      CLS_LOSS: BinaryCrossEntropy
+      REG_LOSS: smooth-l1
+      CORNER_LOSS_REGULARIZATION: True
+      LOSS_WEIGHTS:
+        rcnn_cls_weight: 1.0
+        rcnn_reg_weight: 1.0
+        rcnn_corner_weight: 1.0
+        code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  POST_PROCESSING:
+    RECALL_THRESH_LIST: [0.3, 0.5, 0.7]
+    SCORE_THRESH: 0.1
+    OUTPUT_RAW_SCORE: False
+    EVAL_METRIC: kitti
+    NMS_CONFIG:
+      MULTI_CLASSES_NMS: False
+      NMS_TYPE: nms_gpu
+      NMS_THRESH: 0.1
+      NMS_PRE_MAXSIZE: 4096
+      NMS_POST_MAXSIZE: 500
+criterion:
+  name: skip
+scheduler:
+  name: adam_onecycle
+optimizer:
+  name: adam_onecycle
+  LR: 0.01
+  WEIGHT_DECAY: 0.01
+  MOMENTUM: 0.9
+  MOMS: [0.95, 0.85]
+  PCT_START: 0.4
+  DIV_FACTOR: 10
+  DECAY_STEP_LIST: [35, 45]
+  LR_DECAY: 0.1
+  LR_CLIP: 1e-07
+  LR_WARMUP: False
+  WARMUP_EPOCH: 1
+  GRAD_NORM_CLIP: 10
+2025-05-13 14:08:46.980 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [   0/1856 (  0%)]  Loss: 14.46 (14.5)  LR: 1.000e-03  Time cost: 00:04/2:21:46 [00:05/189:02:05]  Acc_iter 1           Data time: 0.97(0.97)  Forward time: 3.62(3.62)  Batch time: 4.58(4.58)
+2025-05-13 14:09:05.663 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [  49/1856 (  3%)]  Loss: 3.281 (3.77)  LR: 1.000e-03  Time cost: 00:23/14:00 [00:23/19:11:08]  Acc_iter 50          Data time: 0.14(0.15)  Forward time: 0.23(0.31)  Batch time: 0.37(0.46)
+2025-05-13 14:09:24.704 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [  99/1856 (  5%)]  Loss: 3.032 (3.49)  LR: 1.000e-03  Time cost: 00:42/12:23 [00:42/17:26:15]  Acc_iter 100         Data time: 0.14(0.14)  Forward time: 0.25(0.28)  Batch time: 0.39(0.42)
+2025-05-13 14:09:43.904 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 149/1856 (  8%)]  Loss: 2.790 (3.28)  LR: 1.000e-03  Time cost: 01:01/11:39 [01:02/16:53:43]  Acc_iter 150         Data time: 0.13(0.14)  Forward time: 0.26(0.27)  Batch time: 0.39(0.41)
+2025-05-13 14:09:43.906 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:10:03.059 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 199/1856 ( 11%)]  Loss: 2.556 (3.14)  LR: 1.000e-03  Time cost: 01:20/11:08 [01:21/16:36:43]  Acc_iter 200         Data time: 0.13(0.14)  Forward time: 0.25(0.26)  Batch time: 0.39(0.40)
+2025-05-13 14:10:22.423 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 249/1856 ( 13%)]  Loss: 2.434 (3.03)  LR: 1.000e-03  Time cost: 01:40/10:42 [01:40/16:28:28]  Acc_iter 250         Data time: 0.14(0.14)  Forward time: 0.25(0.26)  Batch time: 0.38(0.40)
+2025-05-13 14:10:41.664 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 299/1856 ( 16%)]  Loss: 2.515 (2.95)  LR: 1.001e-03  Time cost: 01:59/10:18 [01:59/16:21:50]  Acc_iter 300         Data time: 0.14(0.14)  Forward time: 0.25(0.26)  Batch time: 0.39(0.40)
+2025-05-13 14:10:41.666 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:11:00.923 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 349/1856 ( 19%)]  Loss: 2.681 (2.89)  LR: 1.001e-03  Time cost: 02:18/09:56 [02:19/16:17:08]  Acc_iter 350         Data time: 0.14(0.14)  Forward time: 0.24(0.26)  Batch time: 0.38(0.40)
+2025-05-13 14:11:20.184 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 399/1856 ( 21%)]  Loss: 2.514 (2.83)  LR: 1.001e-03  Time cost: 02:37/09:34 [02:38/16:13:33]  Acc_iter 400         Data time: 0.14(0.14)  Forward time: 0.26(0.26)  Batch time: 0.39(0.39)
+2025-05-13 14:11:39.432 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 449/1856 ( 24%)]  Loss: 2.536 (2.78)  LR: 1.001e-03  Time cost: 02:57/09:13 [02:57/16:10:37]  Acc_iter 450         Data time: 0.14(0.14)  Forward time: 0.25(0.26)  Batch time: 0.39(0.39)
+2025-05-13 14:11:39.434 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:11:58.705 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 499/1856 ( 27%)]  Loss: 2.174 (2.73)  LR: 1.002e-03  Time cost: 03:16/08:52 [03:16/16:08:19]  Acc_iter 500         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:12:18.008 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 549/1856 ( 30%)]  Loss: 2.158 (2.69)  LR: 1.002e-03  Time cost: 03:35/08:32 [03:36/16:06:32]  Acc_iter 550         Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:12:37.415 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 599/1856 ( 32%)]  Loss: 2.081 (2.65)  LR: 1.002e-03  Time cost: 03:55/08:12 [03:55/16:05:24]  Acc_iter 600         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:12:37.418 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:12:56.788 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 649/1856 ( 35%)]  Loss: 2.212 (2.61)  LR: 1.003e-03  Time cost: 04:14/07:52 [04:14/16:04:16]  Acc_iter 650         Data time: 0.13(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:13:16.066 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 699/1856 ( 38%)]  Loss: 2.074 (2.58)  LR: 1.003e-03  Time cost: 04:33/07:32 [04:34/16:02:56]  Acc_iter 700         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:13:35.365 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 749/1856 ( 40%)]  Loss: 2.239 (2.54)  LR: 1.004e-03  Time cost: 04:52/07:12 [04:53/16:01:47]  Acc_iter 750         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:13:35.367 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:13:42.840 | core.modules.train_utils:train_one_epoch:142 | INFO | Save latest model to /home/simon/Bureau/NAS_Kitti/spvnas/output/kitti/pv_rcnn/pv_rcnn_plugin/ckpt/latest_model
+2025-05-13 14:13:54.961 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 799/1856 ( 43%)]  Loss: 2.210 (2.51)  LR: 1.004e-03  Time cost: 05:12/06:52 [05:13/16:01:39]  Acc_iter 800         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:14:14.376 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 849/1856 ( 46%)]  Loss: 1.872 (2.48)  LR: 1.005e-03  Time cost: 05:31/06:33 [05:32/16:00:59]  Acc_iter 850         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:14:33.743 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 899/1856 ( 48%)]  Loss: 2.002 (2.46)  LR: 1.005e-03  Time cost: 05:51/06:13 [05:51/16:00:13]  Acc_iter 900         Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:14:33.745 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:14:53.173 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 949/1856 ( 51%)]  Loss: 1.740 (2.43)  LR: 1.006e-03  Time cost: 06:10/05:53 [06:11/15:59:40]  Acc_iter 950         Data time: 0.13(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:15:12.806 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [ 999/1856 ( 54%)]  Loss: 1.855 (2.41)  LR: 1.006e-03  Time cost: 06:30/05:34 [06:30/15:59:37]  Acc_iter 1000        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:15:32.268 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1049/1856 ( 57%)]  Loss: 1.892 (2.39)  LR: 1.007e-03  Time cost: 06:49/05:15 [06:50/15:59:10]  Acc_iter 1050        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:15:32.270 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:15:51.658 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1099/1856 ( 59%)]  Loss: 2.041 (2.37)  LR: 1.008e-03  Time cost: 07:09/04:55 [07:09/15:58:33]  Acc_iter 1100        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:16:11.056 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1149/1856 ( 62%)]  Loss: 2.176 (2.35)  LR: 1.008e-03  Time cost: 07:28/04:35 [07:29/15:57:59]  Acc_iter 1150        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:16:30.488 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1199/1856 ( 65%)]  Loss: 2.004 (2.33)  LR: 1.009e-03  Time cost: 07:48/04:16 [07:48/15:57:30]  Acc_iter 1200        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:16:30.491 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:16:49.858 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1249/1856 ( 67%)]  Loss: 1.745 (2.31)  LR: 1.010e-03  Time cost: 08:07/03:56 [08:07/15:56:55]  Acc_iter 1250        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:17:09.183 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1299/1856 ( 70%)]  Loss: 2.092 (2.29)  LR: 1.011e-03  Time cost: 08:26/03:37 [08:27/15:56:16]  Acc_iter 1300        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:17:28.568 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1349/1856 ( 73%)]  Loss: 1.598 (2.28)  LR: 1.011e-03  Time cost: 08:46/03:17 [08:46/15:55:45]  Acc_iter 1350        Data time: 0.13(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:17:28.570 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:17:48.013 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1399/1856 ( 75%)]  Loss: 1.903 (2.26)  LR: 1.012e-03  Time cost: 09:05/02:58 [09:06/15:55:21]  Acc_iter 1400        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:18:07.523 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1449/1856 ( 78%)]  Loss: 1.787 (2.25)  LR: 1.013e-03  Time cost: 09:25/02:38 [09:25/15:55:04]  Acc_iter 1450        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:18:26.916 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1499/1856 ( 81%)]  Loss: 1.576 (2.23)  LR: 1.014e-03  Time cost: 09:44/02:19 [09:45/15:54:35]  Acc_iter 1500        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:18:26.918 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:18:42.700 | core.modules.train_utils:train_one_epoch:142 | INFO | Save latest model to /home/simon/Bureau/NAS_Kitti/spvnas/output/kitti/pv_rcnn/pv_rcnn_plugin/ckpt/latest_model
+2025-05-13 14:18:46.605 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1549/1856 ( 83%)]  Loss: 1.748 (2.22)  LR: 1.015e-03  Time cost: 10:04/01:59 [10:04/15:54:35]  Acc_iter 1550        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:19:06.078 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1599/1856 ( 86%)]  Loss: 1.740 (2.21)  LR: 1.016e-03  Time cost: 10:23/01:40 [10:24/15:54:14]  Acc_iter 1600        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:19:25.464 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1649/1856 ( 89%)]  Loss: 1.589 (2.19)  LR: 1.017e-03  Time cost: 10:43/01:20 [10:43/15:53:45]  Acc_iter 1650        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:19:25.466 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:19:44.816 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1699/1856 ( 92%)]  Loss: 1.537 (2.18)  LR: 1.018e-03  Time cost: 11:02/01:01 [11:02/15:53:14]  Acc_iter 1700        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:20:04.227 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1749/1856 ( 94%)]  Loss: 1.826 (2.17)  LR: 1.019e-03  Time cost: 11:21/00:41 [11:22/15:52:48]  Acc_iter 1750        Data time: 0.13(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:20:23.648 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1799/1856 ( 97%)]  Loss: 1.757 (2.16)  LR: 1.020e-03  Time cost: 11:41/00:22 [11:41/15:52:24]  Acc_iter 1800        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:20:23.650 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:20:42.893 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1849/1856 (100%)]  Loss: 1.735 (2.15)  LR: 1.022e-03  Time cost: 12:00/00:02 [12:01/15:51:46]  Acc_iter 1850        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:20:45.178 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    1/80 (  1%) [1855/1856 (100%)]  Loss: 1.753 (2.14)  LR: 1.022e-03  Time cost: 12:02/00:00 [12:03/15:51:40]  Acc_iter 1856        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:20:46.970 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [   0/1856 (  0%)]  Loss: 1.795 (1.79)  LR: 1.022e-03  Time cost: 00:01/38:16 [12:05/50:24:17]  Acc_iter 1857        Data time: 0.71(0.71)  Forward time: 0.38(0.38)  Batch time: 1.09(1.09)
+2025-05-13 14:21:03.689 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [  43/1856 (  2%)]  Loss: 1.750 (1.72)  LR: 1.023e-03  Time cost: 00:17/12:19 [12:21/16:37:01]  Acc_iter 1900        Data time: 0.14(0.15)  Forward time: 0.25(0.25)  Batch time: 0.39(0.40)
+2025-05-13 14:21:23.131 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [  93/1856 (  5%)]  Loss: 1.523 (1.71)  LR: 1.024e-03  Time cost: 00:37/11:41 [12:41/16:11:38]  Acc_iter 1950        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.40)
+2025-05-13 14:21:23.133 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:21:42.589 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 143/1856 (  8%)]  Loss: 1.522 (1.70)  LR: 1.025e-03  Time cost: 00:56/11:16 [13:00/16:03:56]  Acc_iter 2000        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:22:01.941 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 193/1856 ( 10%)]  Loss: 1.659 (1.70)  LR: 1.026e-03  Time cost: 01:16/10:53 [13:20/15:58:42]  Acc_iter 2050        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:22:21.329 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 243/1856 ( 13%)]  Loss: 1.652 (1.70)  LR: 1.028e-03  Time cost: 01:35/10:31 [13:39/15:55:50]  Acc_iter 2100        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:22:21.331 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:22:40.677 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 293/1856 ( 16%)]  Loss: 1.841 (1.70)  LR: 1.029e-03  Time cost: 01:54/10:11 [13:58/15:53:30]  Acc_iter 2150        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:22:59.984 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 343/1856 ( 18%)]  Loss: 1.656 (1.70)  LR: 1.030e-03  Time cost: 02:14/09:50 [14:18/15:51:28]  Acc_iter 2200        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:23:19.349 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 393/1856 ( 21%)]  Loss: 1.737 (1.70)  LR: 1.032e-03  Time cost: 02:33/09:30 [14:37/15:50:13]  Acc_iter 2250        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:23:19.351 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:23:38.806 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 443/1856 ( 24%)]  Loss: 1.607 (1.69)  LR: 1.033e-03  Time cost: 02:53/09:10 [14:56/15:49:42]  Acc_iter 2300        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:23:58.186 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 493/1856 ( 27%)]  Loss: 1.640 (1.69)  LR: 1.035e-03  Time cost: 03:12/08:51 [15:16/15:48:50]  Acc_iter 2350        Data time: 0.13(0.14)  Forward time: 0.26(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:24:17.631 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 543/1856 ( 29%)]  Loss: 1.629 (1.69)  LR: 1.036e-03  Time cost: 03:31/08:31 [15:35/15:48:21]  Acc_iter 2400        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:24:17.633 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:24:37.084 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 593/1856 ( 32%)]  Loss: 1.630 (1.68)  LR: 1.038e-03  Time cost: 03:51/08:11 [15:55/15:47:56]  Acc_iter 2450        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:24:56.549 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 643/1856 ( 35%)]  Loss: 1.716 (1.68)  LR: 1.039e-03  Time cost: 04:10/07:52 [16:14/15:47:34]  Acc_iter 2500        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:25:15.972 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 693/1856 ( 37%)]  Loss: 1.717 (1.68)  LR: 1.041e-03  Time cost: 04:30/07:32 [16:34/15:47:04]  Acc_iter 2550        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:25:15.974 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:25:35.425 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 743/1856 ( 40%)]  Loss: 1.801 (1.68)  LR: 1.042e-03  Time cost: 04:49/07:13 [16:53/15:46:42]  Acc_iter 2600        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:25:46.336 | core.modules.train_utils:train_one_epoch:142 | INFO | Save latest model to /home/simon/Bureau/NAS_Kitti/spvnas/output/kitti/pv_rcnn/pv_rcnn_plugin/ckpt/latest_model
+2025-05-13 14:25:55.264 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 793/1856 ( 43%)]  Loss: 1.537 (1.68)  LR: 1.044e-03  Time cost: 05:09/06:54 [17:13/15:47:30]  Acc_iter 2650        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:26:14.655 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 843/1856 ( 45%)]  Loss: 1.593 (1.67)  LR: 1.046e-03  Time cost: 05:28/06:34 [17:32/15:46:53]  Acc_iter 2700        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:26:14.657 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:26:34.025 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 893/1856 ( 48%)]  Loss: 1.638 (1.67)  LR: 1.047e-03  Time cost: 05:48/06:15 [17:52/15:46:15]  Acc_iter 2750        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:26:53.460 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 943/1856 ( 51%)]  Loss: 1.510 (1.66)  LR: 1.049e-03  Time cost: 06:07/05:55 [18:11/15:45:48]  Acc_iter 2800        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:27:12.950 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [ 993/1856 ( 54%)]  Loss: 1.741 (1.66)  LR: 1.051e-03  Time cost: 06:27/05:36 [18:31/15:45:31]  Acc_iter 2850        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:27:12.952 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:27:32.309 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1043/1856 ( 56%)]  Loss: 1.857 (1.66)  LR: 1.053e-03  Time cost: 06:46/05:16 [18:50/15:44:55]  Acc_iter 2900        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:27:51.650 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1093/1856 ( 59%)]  Loss: 1.614 (1.66)  LR: 1.055e-03  Time cost: 07:05/04:57 [19:09/15:44:18]  Acc_iter 2950        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:28:11.054 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1143/1856 ( 62%)]  Loss: 1.489 (1.65)  LR: 1.057e-03  Time cost: 07:25/04:37 [19:29/15:43:51]  Acc_iter 3000        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:28:11.057 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:28:30.439 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1193/1856 ( 64%)]  Loss: 1.509 (1.65)  LR: 1.058e-03  Time cost: 07:44/04:18 [19:48/15:43:21]  Acc_iter 3050        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:28:49.965 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1243/1856 ( 67%)]  Loss: 1.632 (1.65)  LR: 1.060e-03  Time cost: 08:04/03:58 [20:08/15:43:10]  Acc_iter 3100        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:29:09.289 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1293/1856 ( 70%)]  Loss: 1.915 (1.64)  LR: 1.062e-03  Time cost: 08:23/03:39 [20:27/15:42:35]  Acc_iter 3150        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:29:09.291 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:29:28.668 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1343/1856 ( 72%)]  Loss: 1.463 (1.64)  LR: 1.064e-03  Time cost: 08:42/03:19 [20:46/15:42:07]  Acc_iter 3200        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:29:48.082 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1393/1856 ( 75%)]  Loss: 1.642 (1.64)  LR: 1.066e-03  Time cost: 09:02/03:00 [21:06/15:41:43]  Acc_iter 3250        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:30:07.540 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1443/1856 ( 78%)]  Loss: 1.648 (1.64)  LR: 1.068e-03  Time cost: 09:21/02:40 [21:25/15:41:24]  Acc_iter 3300        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:30:07.542 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:30:26.875 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1493/1856 ( 80%)]  Loss: 1.893 (1.63)  LR: 1.070e-03  Time cost: 09:41/02:21 [21:44/15:40:53]  Acc_iter 3350        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:30:46.123 | core.modules.train_utils:train_one_epoch:142 | INFO | Save latest model to /home/simon/Bureau/NAS_Kitti/spvnas/output/kitti/pv_rcnn/pv_rcnn_plugin/ckpt/latest_model
+2025-05-13 14:30:46.513 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1543/1856 ( 83%)]  Loss: 1.509 (1.63)  LR: 1.073e-03  Time cost: 10:00/02:01 [22:04/15:40:51]  Acc_iter 3400        Data time: 0.35(0.14)  Forward time: 0.25(0.25)  Batch time: 0.60(0.39)
+2025-05-13 14:31:05.948 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1593/1856 ( 86%)]  Loss: 1.531 (1.63)  LR: 1.075e-03  Time cost: 10:20/01:42 [22:24/15:40:30]  Acc_iter 3450        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:31:05.950 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:31:25.357 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1643/1856 ( 89%)]  Loss: 1.514 (1.62)  LR: 1.077e-03  Time cost: 10:39/01:22 [22:43/15:40:07]  Acc_iter 3500        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:31:44.784 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1693/1856 ( 91%)]  Loss: 1.450 (1.62)  LR: 1.079e-03  Time cost: 10:59/01:03 [23:02/15:39:45]  Acc_iter 3550        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:32:04.214 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1743/1856 ( 94%)]  Loss: 1.417 (1.62)  LR: 1.081e-03  Time cost: 11:18/00:43 [23:22/15:39:24]  Acc_iter 3600        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:32:04.216 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:32:23.650 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1793/1856 ( 97%)]  Loss: 1.470 (1.61)  LR: 1.084e-03  Time cost: 11:37/00:24 [23:41/15:39:03]  Acc_iter 3650        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:32:43.042 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1843/1856 ( 99%)]  Loss: 1.467 (1.61)  LR: 1.086e-03  Time cost: 11:57/00:05 [24:01/15:38:39]  Acc_iter 3700        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:32:47.687 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    2/80 (  2%) [1855/1856 (100%)]  Loss: 1.615 (1.61)  LR: 1.086e-03  Time cost: 12:01/00:00 [24:05/15:38:32]  Acc_iter 3712        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:32:49.487 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [   0/1856 (  0%)]  Loss: 1.467 (1.47)  LR: 1.086e-03  Time cost: 00:01/38:04 [24:07/49:29:33]  Acc_iter 3713        Data time: 0.66(0.66)  Forward time: 0.42(0.42)  Batch time: 1.08(1.08)
+2025-05-13 14:33:03.905 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [  37/1856 (  2%)]  Loss: 1.535 (1.50)  LR: 1.088e-03  Time cost: 00:15/12:29 [24:22/16:33:20]  Acc_iter 3750        Data time: 0.14(0.15)  Forward time: 0.25(0.25)  Batch time: 0.40(0.41)
+2025-05-13 14:33:03.907 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:33:23.330 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [  87/1856 (  5%)]  Loss: 1.332 (1.51)  LR: 1.091e-03  Time cost: 00:35/11:45 [24:41/16:01:05]  Acc_iter 3800        Data time: 0.14(0.15)  Forward time: 0.24(0.25)  Batch time: 0.38(0.40)
+2025-05-13 14:33:42.765 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 137/1856 (  7%)]  Loss: 1.526 (1.51)  LR: 1.093e-03  Time cost: 00:54/11:18 [25:00/15:52:07]  Acc_iter 3850        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:34:02.173 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 187/1856 ( 10%)]  Loss: 1.423 (1.50)  LR: 1.095e-03  Time cost: 01:13/10:56 [25:20/15:47:25]  Acc_iter 3900        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:34:02.175 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:34:21.648 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 237/1856 ( 13%)]  Loss: 1.450 (1.49)  LR: 1.098e-03  Time cost: 01:33/10:35 [25:39/15:45:14]  Acc_iter 3950        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:34:41.096 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 287/1856 ( 15%)]  Loss: 1.340 (1.50)  LR: 1.100e-03  Time cost: 01:52/10:14 [25:59/15:43:28]  Acc_iter 4000        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:35:00.525 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 337/1856 ( 18%)]  Loss: 1.584 (1.50)  LR: 1.103e-03  Time cost: 02:12/09:54 [26:18/15:41:59]  Acc_iter 4050        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:35:00.527 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:35:19.946 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 387/1856 ( 21%)]  Loss: 1.431 (1.50)  LR: 1.105e-03  Time cost: 02:31/09:34 [26:38/15:40:46]  Acc_iter 4100        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:35:39.316 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 437/1856 ( 24%)]  Loss: 1.285 (1.50)  LR: 1.108e-03  Time cost: 02:51/09:14 [26:57/15:39:28]  Acc_iter 4150        Data time: 0.14(0.14)  Forward time: 0.24(0.25)  Batch time: 0.38(0.39)
+2025-05-13 14:35:58.682 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 487/1856 ( 26%)]  Loss: 1.447 (1.50)  LR: 1.111e-03  Time cost: 03:10/08:54 [27:16/15:38:20]  Acc_iter 4200        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:35:58.684 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:36:18.120 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 537/1856 ( 29%)]  Loss: 1.598 (1.50)  LR: 1.113e-03  Time cost: 03:29/08:34 [27:36/15:37:41]  Acc_iter 4250        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:36:37.596 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 587/1856 ( 32%)]  Loss: 1.498 (1.50)  LR: 1.116e-03  Time cost: 03:49/08:14 [27:55/15:37:15]  Acc_iter 4300        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.40(0.39)
+2025-05-13 14:36:56.986 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 637/1856 ( 34%)]  Loss: 1.371 (1.50)  LR: 1.119e-03  Time cost: 04:08/07:55 [28:15/15:36:30]  Acc_iter 4350        Data time: 0.14(0.14)  Forward time: 0.25(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:36:56.988 | core.modules.train_utils:train_one_epoch:122 | INFO | 
+2025-05-13 14:37:16.365 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 687/1856 ( 37%)]  Loss: 1.537 (1.49)  LR: 1.121e-03  Time cost: 04:28/07:35 [28:34/15:35:47]  Acc_iter 4400        Data time: 0.14(0.14)  Forward time: 0.26(0.25)  Batch time: 0.39(0.39)
+2025-05-13 14:37:38.915 | core.modules.train_utils:train_one_epoch:98 | INFO | Train:    3/80 (  4%) [ 737/1856 ( 40%)]  Loss: 1.480 (1.49)  LR: 1.124e-03  Time cost: 04:50/07:20 [28:57/15:45:26]  Acc_iter 4450        Data time: 0.19(0.14)  Forward time: 0.28(0.25)  Batch time: 0.47(0.39)
+2025-05-13 14:37:48.889 | core.modules.train_utils:train_one_epoch:142 | INFO | Save latest model to /home/simon/Bureau/NAS_Kitti/spvnas/output/kitti/pv_rcnn/pv_rcnn_plugin/ckpt/latest_model
