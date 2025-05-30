@@ -354,7 +354,7 @@ class Detector3DTemplate(nn.Module):
 
         logger.info('==> Loading parameters from checkpoint %s to %s' % (filename, 'CPU' if to_cpu else 'GPU'))
         loc_type = torch.device('cpu') if to_cpu else None
-        checkpoint = torch.load(filename, map_location=loc_type)
+        checkpoint = torch.load(filename, map_location=loc_type, weights_only=False)
         try:
             model_state_disk = checkpoint['model_state'] # @Yingqi: sometimes we need to comment it off such as VoxelNeXt Argo, weird ['model_state']
         except:

@@ -29,33 +29,8 @@ def post_act_block_ts(in_channels, out_channels, kernel_size, indice_key=None, s
 
     return m
 
-class NewSPVConvBlock(nn.Module):
 
-    def __init__(self, in_channels, out_channels, kernel_size, indice_key=None, stride=1, padding=0,
-                conv_type='tsconv', norm_fn=None):
-        super().__init__()
-        self.conv = nn.Sequential(
-            spnn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False),
-            norm_fn(out_channels),
-        )
-
-        self.MLP = nn.Sequential(
-            nn.Linear(in_channels, out_channels), 
-            nn.BatchNorm1d(out_channels),
-        )
-
-        self.relu = spnn.ReLU()
-
-    def forward(self, voxel, points):
-        p = voxel_to_point(voxel,points)
-        p.F = self.MLP(p.F)
-        out = self.conv(voxel)
-        out.F = out.F + point_to_voxel(out, p).F
-        out = self.relu(out)
-        return out
-
-
-class VoxelBackBone8xTSSPV(nn.Module):
+class VoxelBackBone8xTSSPV_Alter(nn.Module):
     def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
@@ -79,22 +54,56 @@ class VoxelBackBone8xTSSPV(nn.Module):
 
         block = post_act_block_ts
 
-        self.conv1 = NewSPVConvBlock(16, 16, 3, norm_fn=norm_fn, padding=1, indice_key='subm1')
+        self.conv1 = nn.Sequential(
+            block(16, 16, 3, norm_fn=norm_fn, padding=1, indice_key='subm1'),
+        )
 
-        # [1600, 1408, 41] <- [800, 704, 21]
-        self.conv2_1 = NewSPVConvBlock(16, 32, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='tsconv')
-        self.conv2_2 = NewSPVConvBlock(32, 32, 3, norm_fn=norm_fn, padding=1, indice_key='subm2')
-        self.conv2_3 = NewSPVConvBlock(32, 32, 3, norm_fn=norm_fn, padding=1, indice_key='subm2')
+        self.point_transforms_1 = nn.Sequential(
+            nn.Linear(16, 16), nn.BatchNorm1d(16), nn.ReLU(True),
+        )
 
-        # [800, 704, 21] <- [400, 352, 11]
-        self.conv3_1 = NewSPVConvBlock(32, 64, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv3', conv_type='tsconv')
-        self.conv3_2 = NewSPVConvBlock(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm3')
-        self.conv3_3 = NewSPVConvBlock(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm3')
 
-        # [400, 352, 11] <- [200, 176, 5]
-        self.conv4_1 = NewSPVConvBlock(64, 64, 3, norm_fn=norm_fn, stride=2, padding=(0, 1, 1), indice_key='spconv4', conv_type='tsconv')
-        self.conv4_2 = NewSPVConvBlock(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm4')
-        self.conv4_3 = NewSPVConvBlock(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm4')
+        self.conv2 = nn.Sequential(
+            # [1600, 1408, 41] <- [800, 704, 21]
+            block(16, 32, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv2', conv_type='tsconv'),
+            block(32, 32, 3, norm_fn=norm_fn, padding=1, indice_key='subm2'),
+            block(32, 32, 3, norm_fn=norm_fn, padding=1, indice_key='subm2'),
+        )
+
+        self.point_transforms_2 = nn.Sequential(
+            nn.Linear(16, 32), nn.BatchNorm1d(32), nn.ReLU(True),
+            nn.Linear(32, 32), nn.BatchNorm1d(32), nn.ReLU(True),
+            nn.Linear(32, 32), nn.BatchNorm1d(32), nn.ReLU(True),
+            nn.Linear(32, 32), nn.BatchNorm1d(32), nn.ReLU(True),
+        )
+
+        self.conv3 = nn.Sequential(
+            # [800, 704, 21] <- [400, 352, 11]
+            block(32, 64, 3, norm_fn=norm_fn, stride=2, padding=1, indice_key='spconv3', conv_type='tsconv'),
+            block(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm3'),
+            block(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm3'),
+        )
+
+        self.point_transforms_3 = nn.Sequential(
+            nn.Linear(32, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+        )
+
+        self.conv4 = nn.Sequential(
+            # [400, 352, 11] <- [200, 176, 5]
+            block(64, 64, 3, norm_fn=norm_fn, stride=2, padding=(0, 1, 1), indice_key='spconv4', conv_type='tsconv'),
+            block(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm4'),
+            block(64, 64, 3, norm_fn=norm_fn, padding=1, indice_key='subm4'),
+        )
+
+        self.point_transforms_4 = nn.Sequential(
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+            nn.Linear(64, 64), nn.BatchNorm1d(64), nn.ReLU(True),
+        )
 
         last_pad = 0
         last_pad = self.model_cfg.get('last_pad', last_pad)
@@ -161,19 +170,25 @@ class VoxelBackBone8xTSSPV(nn.Module):
 
         x = self.conv_input(input_sp_tensor)
 
-        x_conv1 = self.conv1(x, input_pc_tensor)
+        z_conv1 = voxel_to_point(x,input_pc_tensor)
+        z_conv1.F = self.point_transforms_1(z_conv1.F)
+        x_conv1 = self.conv1(x)
+        x_conv1.F = x_conv1.F + point_to_voxel(x_conv1, z_conv1).F
 
-        x_conv2 = self.conv2_1(x_conv1, input_pc_tensor)
-        x_conv2 = self.conv2_2(x_conv2, input_pc_tensor)
-        x_conv2 = self.conv2_3(x_conv2, input_pc_tensor)
+        z_conv2 = voxel_to_point(x_conv1, input_pc_tensor)
+        z_conv2.F = self.point_transforms_2(z_conv2.F)
+        x_conv2 = self.conv2(x_conv1)
+        x_conv2.F = x_conv2.F + point_to_voxel(x_conv2, z_conv2).F
 
-        x_conv3 = self.conv3_1(x_conv2, input_pc_tensor)
-        x_conv3 = self.conv3_2(x_conv3, input_pc_tensor)
-        x_conv3 = self.conv3_3(x_conv3, input_pc_tensor)
+        z_conv3 = voxel_to_point(x_conv2, input_pc_tensor)
+        z_conv3.F = self.point_transforms_3(z_conv3.F)
+        x_conv3 = self.conv3(x_conv2)
+        x_conv3.F = x_conv3.F + point_to_voxel(x_conv3, z_conv3).F
 
-        x_conv4 = self.conv4_1(x_conv3, input_pc_tensor)
-        x_conv4 = self.conv4_2(x_conv4, input_pc_tensor)
-        x_conv4 = self.conv4_3(x_conv4, input_pc_tensor)
+        z_conv4 = voxel_to_point(x_conv3, input_pc_tensor)
+        z_conv4.F = self.point_transforms_4(z_conv4.F)
+        x_conv4 = self.conv4(x_conv3)
+        x_conv4.F = x_conv4.F + point_to_voxel(x_conv4, z_conv4).F
 
         # for detection head
         # [200, 176, 5] -> [200, 176, 2]
@@ -202,4 +217,4 @@ class VoxelBackBone8xTSSPV(nn.Module):
 
         return batch_dict
 
-__all__['VoxelBackBone8xTSSPV'] = VoxelBackBone8xTSSPV
+__all__['VoxelBackBone8xTSSPV_Alter'] = VoxelBackBone8xTSSPV_Alter
