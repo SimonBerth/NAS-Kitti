@@ -11,52 +11,15 @@ from pcdet.models.backbones_3d.__init__ import __all__
 
 from core.models.utils import sphashquery, calc_ti_weights, voxel_to_point, point_to_voxel, PointTensor
 
-def post_act_block_ts(in_channels, out_channels, kernel_size, indice_key=None, stride=1, padding=0,
-                   conv_type='tsconv', norm_fn=None):
-    # TODO: Insert a way to have non Subm with stride = 1
-    if conv_type == 'tsconv':
-        conv = spnn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False)
-    elif conv_type == 'inverseconv':
-        conv = spnn.Conv3d(in_channels, out_channels, kernel_size,  stride=stride, bias=False, transposed=True) 
-    else:
-        raise NotImplementedError
+from core.modules.modules import RandomDepth, RandomChoice, RandomModule
 
-    m = nn.Sequential(
-        conv,
-        norm_fn(out_channels),
-        spnn.ReLU(),
-    )
-
-    return m
-
-class NewSPVConvBlock(nn.Module):
-
-    def __init__(self, in_channels, out_channels, kernel_size, indice_key=None, stride=1, padding=0,
-                conv_type='tsconv', norm_fn=None):
-        super().__init__()
-        self.conv = nn.Sequential(
-            spnn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=False),
-            norm_fn(out_channels),
-            spnn.ReLU()
-        )
-
-        self.MLP = nn.Sequential(
-            nn.Linear(in_channels, out_channels), 
-            nn.BatchNorm1d(out_channels),
-            nn.ReLU(inplace=True)
-        )
-
-        
-
-    def forward(self, voxel, points):
-        p = voxel_to_point(voxel,points)
-        p.F = self.MLP(p.F)
-        out = self.conv(voxel)
-        out.F = out.F + point_to_voxel(out, p).F
-        return out
+from core.modules.layers import (DynamicConvolutionBlock,
+                                 DynamicLinearBlock)
 
 
-class VoxelBackBone8xTSSPV(nn.Module):
+
+
+class VoxelBackBone8xTSNAS(RandomChoice):
     def __init__(self, model_cfg, input_channels, grid_size, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
@@ -77,8 +40,6 @@ class VoxelBackBone8xTSSPV(nn.Module):
             spnn.BatchNorm(16),
             spnn.ReLU(),
         )
-
-        block = post_act_block_ts
 
         self.conv1 = NewSPVConvBlock(16, 16, 3, norm_fn=norm_fn, padding=1, indice_key='subm1')
 
@@ -203,4 +164,10 @@ class VoxelBackBone8xTSSPV(nn.Module):
 
         return batch_dict
 
-__all__['VoxelBackBone8xTSSPV'] = VoxelBackBone8xTSSPV
+
+
+
+
+
+
+__all__['VoxelBackBone8xTSNAS'] = VoxelBackBone8xTSNAS
