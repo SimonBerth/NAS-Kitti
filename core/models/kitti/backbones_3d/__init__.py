@@ -4,6 +4,7 @@ from .backbone3d_spv import VoxelBackBone8xTSSPV
 from .backbone3d_spv_alter import VoxelBackBone8xTSSPV_Alter
 from .unet import UNetV2TS
 from .backbone_voxel_next import VoxelResBackBone8xVoxelNeXtTS
+from .backbone3d_nas import VoxelBackBone8xTSNAS
 
 __all__ = {
     'VoxelBackBone8xTS': VoxelBackBone8xTS,
@@ -11,4 +12,5 @@ __all__ = {
     'VoxelResBackBone8xVoxelNeXtTS': VoxelResBackBone8xVoxelNeXtTS,
     'VoxelBackBone8xTSSPV': VoxelBackBone8xTSSPV,
     'VoxelBackBone8xTSSPV_Alter': VoxelBackBone8xTSSPV_Alter,
+    'VoxelBackBone8xTSSPV_NAS': VoxelBackBone8xTSNAS,
 }

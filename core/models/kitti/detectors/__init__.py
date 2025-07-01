@@ -6,5 +6,5 @@ from .pv_rcnn_nas import PVRCNNNAS
 __all__ = {
     'Detector3DTemplate': Detector3DTemplate,
     'PVRCNN': PVRCNN,
-    'PVRCNNNAS': PVRCNNNAS
+    'PVRCNNNAS': PVRCNNNAS,
 }
